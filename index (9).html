@@ -1,0 +1,993 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#031426">
+  <meta name="description" content="Laboratorio educativo para explorar modelos GLB en 3D, realidad aumentada y realidad virtual.">
+  <title>XR Fusion EDU · Laboratorio inmersivo</title>
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='15' fill='%23031426'/%3E%3Cpath d='M13 20 32 9l19 11v24L32 55 13 44Z' fill='none' stroke='%2300b7ff' stroke-width='4'/%3E%3Cpath d='m13 20 19 11 19-11M32 31v24' fill='none' stroke='%23b6e800' stroke-width='4'/%3E%3Ccircle cx='32' cy='31' r='5' fill='%23ff7a1a'/%3E%3C/svg%3E">
+  <script src="https://aframe.io/releases/1.8.0/aframe.min.js"></script>
+  <script>
+    AFRAME.registerComponent('fit-gltf', {
+      schema: { size: { default: 1.65 } },
+      init: function () {
+        this.el.addEventListener('model-loaded', () => {
+          const mesh = this.el.getObject3D('mesh');
+          if (!mesh) return;
+          const originalPosition = this.el.object3D.position.clone();
+          this.el.object3D.position.set(0, 0, 0);
+          this.el.object3D.updateMatrixWorld(true);
+          const box = new THREE.Box3().setFromObject(mesh);
+          const dimensions = box.getSize(new THREE.Vector3());
+          const largest = Math.max(dimensions.x, dimensions.y, dimensions.z) || 1;
+          const factor = this.data.size / largest;
+          mesh.scale.multiplyScalar(factor);
+          mesh.updateMatrixWorld(true);
+          const fitted = new THREE.Box3().setFromObject(mesh);
+          const center = fitted.getCenter(new THREE.Vector3());
+          mesh.position.x -= center.x;
+          mesh.position.y -= fitted.min.y;
+          mesh.position.z -= center.z;
+          this.el.object3D.position.copy(originalPosition);
+          this.el.object3D.updateMatrixWorld(true);
+        });
+      }
+    });
+    AFRAME.registerComponent('spin-model', {
+      schema: { active: { default: true }, speed: { default: 18 } },
+      tick: function (_, delta) {
+        if (this.data.active && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+          this.el.object3D.rotation.y += THREE.MathUtils.degToRad(this.data.speed * delta / 1000);
+        }
+      }
+    });
+  </script>
+  <script type="module" src="https://unpkg.com/@google/model-viewer@4.1.0/dist/model-viewer.min.js"></script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --ink: #f7fbff;
+      --muted: #a9c4d7;
+      --deep: #020b15;
+      --navy: #031426;
+      --panel: rgba(6, 29, 49, .88);
+      --line: rgba(72, 185, 241, .24);
+      --blue: #00b7ff;
+      --green: #b6e800;
+      --orange: #ff7a1a;
+      --danger: #ff5468;
+      --shadow: 0 20px 60px rgba(0, 0, 0, .38);
+      --radius: 18px;
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; min-height: 100%; background: var(--deep); color: var(--ink); font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+    body { min-height: 100svh; overflow-x: hidden; }
+    button, input, select, textarea { font: inherit; }
+    button { color: inherit; }
+    button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--green); outline-offset: 3px; }
+    .skip-link { position: fixed; z-index: 9999; top: 8px; left: 8px; transform: translateY(-160%); background: var(--green); color: #081500; padding: 10px 16px; border-radius: 10px; font-weight: 900; }
+    .skip-link:focus { transform: none; }
+    .app-shell {
+      min-height: 100svh;
+      background:
+        radial-gradient(circle at 74% 18%, rgba(0, 183, 255, .12), transparent 30%),
+        radial-gradient(circle at 12% 86%, rgba(182, 232, 0, .08), transparent 27%),
+        linear-gradient(145deg, #020a13, #041a2c 55%, #020b15);
+      position: relative;
+    }
+    .app-shell::before { content: ""; position: fixed; inset: 0; pointer-events: none; opacity: .17; background-image: linear-gradient(rgba(67, 172, 224, .16) 1px, transparent 1px), linear-gradient(90deg, rgba(67, 172, 224, .16) 1px, transparent 1px); background-size: 48px 48px; mask-image: linear-gradient(to bottom, #000, transparent 82%); }
+    .topbar { min-height: 72px; padding: 12px clamp(14px, 2.2vw, 30px); display: flex; gap: 18px; align-items: center; justify-content: space-between; border-bottom: 1px solid var(--line); background: rgba(2, 13, 24, .9); backdrop-filter: blur(18px); position: sticky; top: 0; z-index: 80; }
+    .brand { display: flex; align-items: center; min-width: 0; gap: 12px; }
+    .brand-mark { width: 46px; height: 46px; display: grid; place-items: center; border-radius: 14px; background: linear-gradient(145deg, rgba(0, 183, 255, .22), rgba(182, 232, 0, .12)); border: 1px solid rgba(0, 183, 255, .52); box-shadow: inset 0 0 22px rgba(0, 183, 255, .13), 0 0 28px rgba(0, 183, 255, .1); flex: 0 0 auto; }
+    .brand-mark svg { width: 30px; height: 30px; }
+    .brand h1 { font-size: clamp(1.02rem, 2vw, 1.35rem); line-height: 1.05; margin: 0; letter-spacing: -.025em; }
+    .brand p { margin: 4px 0 0; color: var(--muted); font-size: .79rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .brand strong { color: var(--blue); }
+    .top-status { display: flex; align-items: center; justify-content: flex-end; gap: 7px; flex-wrap: wrap; }
+    .status-pill { border: 1px solid var(--line); background: rgba(6, 32, 52, .76); border-radius: 999px; padding: 6px 9px; color: var(--muted); font-size: .74rem; font-weight: 760; display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+    .status-pill i { width: 7px; height: 7px; border-radius: 99px; background: #587286; box-shadow: 0 0 0 3px rgba(88, 114, 134, .13); }
+    .status-pill.good { color: #d9ffad; border-color: rgba(182, 232, 0, .3); }
+    .status-pill.good i { background: var(--green); box-shadow: 0 0 11px rgba(182, 232, 0, .7); }
+    .status-pill.warn { color: #ffd1b3; border-color: rgba(255, 122, 26, .38); }
+    .status-pill.warn i { background: var(--orange); }
+    .icon-button { width: 38px; height: 38px; border: 1px solid var(--line); background: rgba(8, 39, 63, .8); border-radius: 12px; display: grid; place-items: center; cursor: pointer; font-size: 1rem; transition: .2s ease; }
+    .icon-button:hover { border-color: var(--blue); transform: translateY(-1px); }
+    .workspace { position: relative; z-index: 1; display: grid; grid-template-columns: minmax(245px, 285px) minmax(450px, 1fr) minmax(286px, 340px); gap: 12px; padding: 12px; min-height: calc(100svh - 72px); }
+    .panel { min-width: 0; border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow); border-radius: var(--radius); backdrop-filter: blur(18px); overflow: hidden; }
+    .side-panel { display: flex; flex-direction: column; max-height: calc(100svh - 96px); position: sticky; top: 84px; }
+    .panel-head { padding: 16px 16px 13px; border-bottom: 1px solid var(--line); display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; background: linear-gradient(135deg, rgba(0, 183, 255, .08), transparent); }
+    .eyebrow { margin: 0 0 5px; color: var(--green); font-weight: 900; font-size: .69rem; letter-spacing: .14em; text-transform: uppercase; }
+    .panel-head h2, .section-title { margin: 0; font-size: 1rem; letter-spacing: -.012em; }
+    .panel-scroll { overflow: auto; overscroll-behavior: contain; padding: 14px; }
+    .upload-zone { border: 1px dashed rgba(0, 183, 255, .53); border-radius: 15px; padding: 14px; text-align: center; background: rgba(0, 183, 255, .06); position: relative; transition: .2s ease; }
+    .upload-zone.drag { background: rgba(182, 232, 0, .12); border-color: var(--green); transform: scale(1.01); }
+    .upload-zone .cube { font-size: 1.7rem; line-height: 1; margin-bottom: 7px; }
+    .upload-zone strong { display: block; font-size: .9rem; }
+    .upload-zone p { margin: 5px 0 10px; color: var(--muted); font-size: .76rem; line-height: 1.45; }
+    .file-input { position: absolute; inline-size: 1px; block-size: 1px; opacity: 0; pointer-events: none; }
+    .primary-button, .secondary-button, .mode-button, .small-button { border: 0; cursor: pointer; font-weight: 850; border-radius: 12px; transition: transform .18s ease, filter .18s ease, border-color .18s ease, background .18s ease; }
+    .primary-button { background: linear-gradient(135deg, var(--green), #77dd25); color: #071400; padding: 10px 13px; box-shadow: 0 8px 24px rgba(130, 220, 30, .16); }
+    .primary-button.orange { background: linear-gradient(135deg, var(--orange), #ffad24); color: #211005; box-shadow: 0 8px 24px rgba(255, 122, 26, .18); }
+    .secondary-button { background: rgba(7, 42, 69, .88); border: 1px solid rgba(0, 183, 255, .35); color: #eaf8ff; padding: 9px 12px; }
+    .primary-button:hover, .secondary-button:hover, .mode-button:hover, .small-button:hover { transform: translateY(-1px); filter: brightness(1.08); }
+    .primary-button:disabled, .secondary-button:disabled { cursor: not-allowed; opacity: .5; transform: none; }
+    .button-row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .button-row > * { flex: 1 1 auto; }
+    details.import-url { margin-top: 10px; border: 1px solid var(--line); border-radius: 13px; background: rgba(2, 16, 28, .48); }
+    details.import-url summary { cursor: pointer; padding: 10px 12px; color: #d8efff; font-size: .78rem; font-weight: 800; }
+    .details-content { padding: 0 10px 10px; }
+    .field { display: grid; gap: 6px; margin-bottom: 10px; }
+    .field:last-child { margin-bottom: 0; }
+    .field label { color: #d6ecf8; font-size: .75rem; font-weight: 780; }
+    .field input, .field select, .field textarea { width: 100%; color: var(--ink); background: rgba(2, 15, 26, .78); border: 1px solid rgba(95, 178, 220, .28); border-radius: 10px; padding: 9px 10px; min-height: 40px; }
+    .field textarea { resize: vertical; min-height: 76px; line-height: 1.4; }
+    .field input::placeholder, .field textarea::placeholder { color: #718ea2; }
+    .hint { color: #88a8bc; font-size: .71rem; line-height: 1.45; margin: 8px 0 0; }
+    .divider { height: 1px; background: var(--line); margin: 14px 0; }
+    .catalog-title { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 0 0 9px; }
+    .catalog-title span { font-size: .73rem; color: var(--muted); }
+    .model-list { display: grid; gap: 8px; }
+    .model-card { width: 100%; display: grid; grid-template-columns: 38px 1fr auto; gap: 9px; align-items: center; border: 1px solid rgba(84, 156, 192, .22); border-radius: 13px; padding: 9px; background: rgba(4, 22, 37, .72); text-align: left; cursor: pointer; position: relative; }
+    .model-card:hover { border-color: rgba(0, 183, 255, .58); }
+    .model-card.active { border-color: var(--green); background: linear-gradient(135deg, rgba(182, 232, 0, .1), rgba(0, 183, 255, .07)); box-shadow: inset 3px 0 0 var(--green); }
+    .model-thumb { width: 38px; height: 38px; border-radius: 11px; display: grid; place-items: center; font-weight: 900; color: var(--blue); background: linear-gradient(145deg, #0a3552, #061927); border: 1px solid rgba(0, 183, 255, .25); }
+    .model-meta { min-width: 0; }
+    .model-meta strong, .model-meta small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .model-meta strong { font-size: .79rem; }
+    .model-meta small { margin-top: 3px; color: var(--muted); font-size: .68rem; }
+    .remove-model { width: 28px; height: 28px; border: 0; border-radius: 9px; background: rgba(255, 84, 104, .09); color: #ff9ba8; cursor: pointer; }
+    .stage-panel { display: flex; flex-direction: column; min-height: calc(100svh - 96px); background: rgba(2, 13, 24, .68); }
+    .stage-toolbar { min-height: 62px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 12px; }
+    .mode-switch { display: inline-grid; grid-template-columns: repeat(3, minmax(88px, 1fr)); gap: 6px; background: rgba(1, 10, 19, .72); padding: 5px; border-radius: 14px; border: 1px solid var(--line); }
+    .mode-button { padding: 9px 11px; background: transparent; color: var(--muted); font-size: .78rem; border: 1px solid transparent; }
+    .mode-button.active { color: #fff; border-color: rgba(0, 183, 255, .55); background: linear-gradient(135deg, rgba(0, 183, 255, .22), rgba(8, 124, 255, .12)); box-shadow: 0 0 20px rgba(0, 183, 255, .09); }
+    .scene-label { text-align: right; min-width: 0; }
+    .scene-label strong { display: block; max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .8rem; }
+    .scene-label small { color: var(--muted); font-size: .68rem; }
+    .viewport { min-height: 500px; flex: 1 1 auto; position: relative; overflow: hidden; background: radial-gradient(circle at 50% 42%, #0a4265 0, #061d31 31%, #020a13 76%); }
+    .viewport::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; background: repeating-radial-gradient(ellipse at 50% 100%, transparent 0 34px, rgba(0, 183, 255, .08) 35px 36px), linear-gradient(to top, rgba(0, 183, 255, .12), transparent 42%); }
+    model-viewer { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 2; --poster-color: transparent; --progress-bar-color: var(--green); --progress-bar-height: 4px; background: transparent; }
+    model-viewer::part(default-progress-bar) { background-color: var(--green); }
+    .ar-prompt { position: absolute; inset: auto 16px 16px; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border-radius: 14px; background: rgba(2, 15, 27, .9); border: 1px solid rgba(255, 122, 26, .45); backdrop-filter: blur(12px); }
+    .ar-prompt[hidden] { display: none; }
+    .ar-prompt strong { display: block; font-size: .82rem; }
+    .ar-prompt span { color: var(--muted); font-size: .72rem; }
+    .loading-card { position: absolute; left: 50%; top: 50%; z-index: 8; transform: translate(-50%, -50%); width: min(290px, calc(100% - 32px)); padding: 18px; text-align: center; border: 1px solid var(--line); border-radius: 16px; background: rgba(2, 16, 28, .9); box-shadow: var(--shadow); }
+    .loading-card[hidden] { display: none; }
+    .loader-ring { width: 38px; height: 38px; margin: 0 auto 10px; border: 3px solid rgba(0, 183, 255, .18); border-top-color: var(--green); border-radius: 50%; animation: spin 1s linear infinite; }
+    @keyframes spin { to { transform: rotate(1turn); } }
+    .loading-card strong { display: block; font-size: .88rem; }
+    .loading-card span { display: block; color: var(--muted); font-size: .73rem; margin-top: 5px; }
+    .hotspot { width: 30px; height: 30px; border-radius: 50%; border: 3px solid #fff; background: var(--orange); color: #1e0c00; box-shadow: 0 0 0 5px rgba(255, 122, 26, .2), 0 0 22px rgba(255, 122, 26, .7); cursor: pointer; position: relative; font-weight: 950; }
+    .hotspot .annotation { position: absolute; left: 34px; top: 50%; transform: translateY(-50%); width: max-content; max-width: 190px; background: rgba(2, 15, 26, .94); color: #fff; border: 1px solid rgba(255, 122, 26, .5); border-radius: 10px; padding: 7px 9px; font-size: .72rem; line-height: 1.25; pointer-events: none; opacity: 0; transition: opacity .18s ease; }
+    .hotspot:hover .annotation, .hotspot:focus .annotation { opacity: 1; }
+    .vr-stage { position: absolute; inset: 0; z-index: 4; }
+    .vr-stage[hidden] { display: none; }
+    .vr-stage a-scene { width: 100%; height: 100%; }
+    .vr-overlay { position: absolute; z-index: 7; inset: 14px 14px auto auto; display: flex; gap: 8px; }
+    .controls-strip { border-top: 1px solid var(--line); padding: 10px 12px; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: center; background: rgba(3, 20, 36, .93); }
+    .control-group { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+    .small-button { min-height: 36px; padding: 7px 10px; border: 1px solid rgba(77, 163, 205, .26); background: rgba(6, 34, 55, .8); color: #dff4ff; font-size: .74rem; }
+    .small-button.active { color: #0a1600; background: var(--green); border-color: var(--green); }
+    .range-control { display: flex; align-items: center; gap: 8px; min-width: 155px; }
+    .range-control label { color: var(--muted); font-size: .71rem; white-space: nowrap; }
+    input[type="range"] { width: 100%; accent-color: var(--green); }
+    .model-state { justify-self: end; color: var(--muted); font-size: .7rem; text-align: right; }
+    .tabs { display: flex; gap: 5px; padding: 8px 10px 0; background: rgba(2, 16, 28, .42); }
+    .tab-button { flex: 1; border: 0; border-bottom: 2px solid transparent; padding: 9px 6px; background: transparent; color: var(--muted); font-size: .73rem; font-weight: 820; cursor: pointer; }
+    .tab-button.active { color: var(--ink); border-color: var(--orange); }
+    .tab-panel { padding: 14px; overflow: auto; }
+    .tab-panel[hidden] { display: none; }
+    .info-banner { border: 1px solid rgba(0, 183, 255, .26); background: linear-gradient(135deg, rgba(0, 183, 255, .09), rgba(182, 232, 0, .035)); border-radius: 13px; padding: 11px; margin-bottom: 12px; }
+    .info-banner strong { font-size: .8rem; display: block; }
+    .info-banner p { margin: 5px 0 0; color: var(--muted); font-size: .72rem; line-height: 1.45; }
+    .license-note { display: grid; grid-template-columns: 24px 1fr; gap: 8px; align-items: start; color: #ffd2b4; background: rgba(255, 122, 26, .07); border: 1px solid rgba(255, 122, 26, .24); border-radius: 11px; padding: 9px; margin-top: 10px; font-size: .7rem; line-height: 1.4; }
+    .section-block { margin-top: 15px; }
+    .section-block:first-child { margin-top: 0; }
+    .section-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 9px; }
+    .section-top small { color: var(--muted); font-size: .68rem; }
+    .annotation-list { display: grid; gap: 7px; margin-top: 9px; }
+    .annotation-item { display: grid; grid-template-columns: 24px 1fr auto; align-items: center; gap: 7px; border: 1px solid rgba(255, 122, 26, .2); background: rgba(255, 122, 26, .055); border-radius: 10px; padding: 7px; font-size: .72rem; }
+    .annotation-item b { color: var(--orange); text-align: center; }
+    .annotation-item button { width: 25px; height: 25px; border: 0; border-radius: 7px; background: rgba(255, 84, 104, .12); color: #ff9aa7; cursor: pointer; }
+    .empty-state { color: #7898ad; font-size: .72rem; padding: 10px; text-align: center; border: 1px dashed rgba(105, 162, 193, .23); border-radius: 10px; }
+    .mission-card { border: 1px solid rgba(182, 232, 0, .25); background: rgba(182, 232, 0, .055); border-radius: 13px; padding: 11px; }
+    .mission-card h3 { margin: 0 0 6px; font-size: .86rem; }
+    .mission-card p { margin: 0; color: #c8deec; font-size: .73rem; line-height: 1.5; }
+    .progress-track { height: 8px; overflow: hidden; border-radius: 99px; background: rgba(113, 150, 170, .2); margin: 11px 0 8px; }
+    .progress-bar { width: 0; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--green), var(--blue)); transition: width .35s ease; }
+    .mission-steps { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+    .mission-step { border: 1px solid rgba(95, 171, 211, .2); border-radius: 9px; padding: 7px; background: rgba(2, 15, 27, .55); color: var(--muted); font-size: .68rem; cursor: pointer; text-align: left; }
+    .mission-step.done { color: #e7ffc6; border-color: rgba(182, 232, 0, .4); background: rgba(182, 232, 0, .09); }
+    .prompt-box { white-space: pre-wrap; color: #dff4ff; background: rgba(0, 0, 0, .24); border: 1px solid rgba(0, 183, 255, .2); border-radius: 11px; padding: 10px; min-height: 135px; max-height: 230px; overflow: auto; font-size: .69rem; line-height: 1.48; margin: 9px 0; }
+    .toast { position: fixed; z-index: 999; left: 50%; bottom: 22px; transform: translate(-50%, 18px); max-width: min(520px, calc(100% - 28px)); padding: 12px 15px; background: rgba(4, 24, 40, .96); border: 1px solid rgba(0, 183, 255, .48); box-shadow: var(--shadow); border-radius: 13px; color: #eaf8ff; font-size: .8rem; opacity: 0; pointer-events: none; transition: .22s ease; }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .toast.error { border-color: rgba(255, 84, 104, .65); background: rgba(56, 13, 23, .96); }
+    .toast.success { border-color: rgba(182, 232, 0, .55); }
+    .modal-backdrop { position: fixed; z-index: 900; inset: 0; display: grid; place-items: center; padding: 18px; background: rgba(0, 7, 13, .8); backdrop-filter: blur(12px); }
+    .modal-backdrop[hidden] { display: none; }
+    .modal { width: min(760px, 100%); max-height: min(86svh, 760px); overflow: auto; border: 1px solid rgba(0, 183, 255, .43); border-radius: 22px; background: linear-gradient(145deg, rgba(6, 34, 56, .98), rgba(2, 15, 27, .98)); box-shadow: 0 30px 90px rgba(0, 0, 0, .58); padding: clamp(18px, 4vw, 30px); position: relative; }
+    .modal::before { content: ""; position: absolute; inset: 0 0 auto; height: 4px; border-radius: 22px 22px 0 0; background: linear-gradient(90deg, var(--blue), var(--green), var(--orange)); }
+    .modal h2 { font-size: clamp(1.3rem, 4vw, 2rem); margin: 0; letter-spacing: -.03em; }
+    .modal .lead { color: #bed8e8; line-height: 1.55; margin: 9px 0 18px; }
+    .modal-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 9px; margin-bottom: 17px; }
+    .modal-card { min-height: 105px; border: 1px solid var(--line); border-radius: 14px; padding: 11px; background: rgba(1, 13, 23, .5); }
+    .modal-card b { display: block; color: var(--green); font-size: .78rem; margin-bottom: 5px; }
+    .modal-card span { display: block; color: var(--muted); font-size: .72rem; line-height: 1.45; }
+    .class-route { border-left: 4px solid var(--orange); background: rgba(255, 122, 26, .075); border-radius: 0 12px 12px 0; padding: 12px 14px; margin: 12px 0 18px; }
+    .class-route strong { display: block; margin-bottom: 5px; }
+    .class-route p { margin: 0; color: #d1e4ef; font-size: .78rem; line-height: 1.48; }
+    .modal-actions { display: flex; gap: 9px; justify-content: flex-end; flex-wrap: wrap; }
+    .compat-grid { display: grid; gap: 8px; margin: 14px 0; }
+    .compat-row { display: grid; grid-template-columns: 145px 1fr; gap: 12px; padding: 9px 10px; border-radius: 11px; background: rgba(2, 15, 27, .58); border: 1px solid var(--line); font-size: .76rem; }
+    .compat-row b { color: var(--muted); }
+    .compat-row span { color: #eaf8ff; }
+    @media (max-width: 1180px) {
+      .workspace { grid-template-columns: 260px minmax(420px, 1fr); }
+      .right-panel { grid-column: 1 / -1; position: static; max-height: none; }
+      .right-panel .tab-panel { max-height: none; }
+    }
+    @media (max-width: 780px) {
+      .topbar { position: relative; align-items: flex-start; }
+      .top-status .status-pill { display: none; }
+      .workspace { display: flex; flex-direction: column; padding: 8px; min-height: auto; }
+      .side-panel { position: static; max-height: none; }
+      .left-panel { order: 2; }
+      .stage-panel { order: 1; min-height: 72svh; }
+      .right-panel { order: 3; }
+      .viewport { min-height: 58svh; }
+      .stage-toolbar { align-items: stretch; flex-direction: column; }
+      .mode-switch { width: 100%; }
+      .scene-label { display: none; }
+      .controls-strip { grid-template-columns: 1fr; }
+      .model-state { justify-self: start; text-align: left; }
+      .modal-grid { grid-template-columns: 1fr; }
+      .modal-card { min-height: 0; }
+      .compat-row { grid-template-columns: 1fr; gap: 3px; }
+    }
+    @media (max-width: 480px) {
+      .brand p { display: none; }
+      .topbar { min-height: 64px; padding: 9px 10px; }
+      .brand-mark { width: 40px; height: 40px; }
+      .mode-button { font-size: .7rem; padding-inline: 6px; }
+      .viewport { min-height: 62svh; }
+      .ar-prompt { flex-direction: column; align-items: stretch; }
+      .controls-strip { padding: 8px; }
+      .range-control { min-width: 100%; }
+      .mission-steps { grid-template-columns: 1fr; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#learningStage">Saltar al laboratorio</a>
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 64 64" fill="none"><path d="M13 20 32 9l19 11v24L32 55 13 44V20Z" stroke="#00b7ff" stroke-width="4"/><path d="m13 20 19 11 19-11M32 31v24" stroke="#b6e800" stroke-width="4"/><circle cx="32" cy="31" r="5" fill="#ff7a1a"/></svg>
+        </div>
+        <div>
+          <h1><strong>XR Fusion</strong> EDU</h1>
+          <p>Laboratorio de modelos 3D · RA · RV · mediación con IA</p>
+        </div>
+      </div>
+      <div class="top-status" aria-label="Estado de compatibilidad">
+        <span class="status-pill good" id="status3d"><i></i>3D listo</span>
+        <span class="status-pill" id="statusAr"><i></i>Comprobando RA</span>
+        <span class="status-pill" id="statusVr"><i></i>Comprobando RV</span>
+        <button class="icon-button" id="compatButton" type="button" aria-label="Ver diagnóstico XR" title="Diagnóstico XR">◉</button>
+        <button class="icon-button" id="helpButton" type="button" aria-label="Ver dinámica de clase" title="Dinámica de clase">?</button>
+      </div>
+    </header>
+
+    <main class="workspace" id="learningStage">
+      <aside class="panel side-panel left-panel" aria-labelledby="libraryTitle">
+        <div class="panel-head">
+          <div><p class="eyebrow">01 · Preparar</p><h2 id="libraryTitle">Biblioteca 3D</h2></div>
+          <span class="status-pill"><i></i><span id="modelCount">1 modelo</span></span>
+        </div>
+        <div class="panel-scroll">
+          <div class="upload-zone" id="dropZone">
+            <div class="cube" aria-hidden="true">⬡</div>
+            <strong>Carga tu modelo GLB</strong>
+            <p>Arrastra uno o varios archivos descargados de Sketchfab. Se procesan en este dispositivo.</p>
+            <input class="file-input" id="modelFile" type="file" accept=".glb,model/gltf-binary" multiple>
+            <button class="primary-button" id="chooseModelButton" type="button">Seleccionar archivos .glb</button>
+          </div>
+
+          <details class="import-url">
+            <summary>Usar una URL pública de modelo</summary>
+            <div class="details-content">
+              <div class="field"><label for="modelUrl">URL HTTPS del GLB</label><input id="modelUrl" type="url" placeholder="https://sitio/modelo.glb"></div>
+              <button class="secondary-button" id="loadUrlButton" type="button">Cargar URL</button>
+              <p class="hint">El servidor del modelo debe permitir CORS. La carga local suele ser más confiable.</p>
+            </div>
+          </details>
+
+          <div class="divider"></div>
+          <div class="catalog-title"><h3 class="section-title">Modelos de la sesión</h3><span id="totalSize">Demo web</span></div>
+          <div class="model-list" id="modelList" aria-live="polite"></div>
+          <p class="hint">Consejo: para móviles, optimiza texturas y geometría. Un GLB liviano inicia más rápido y reduce mareo por pérdida de fluidez.</p>
+        </div>
+      </aside>
+
+      <section class="panel stage-panel" aria-labelledby="sceneTitle">
+        <div class="stage-toolbar">
+          <div class="mode-switch" role="tablist" aria-label="Modo de visualización">
+            <button class="mode-button active" type="button" role="tab" aria-selected="true" data-mode="3d">◫ Explorar 3D</button>
+            <button class="mode-button" type="button" role="tab" aria-selected="false" data-mode="ar">◎ Realidad Aumentada</button>
+            <button class="mode-button" type="button" role="tab" aria-selected="false" data-mode="vr">◉ Laboratorio RV</button>
+          </div>
+          <div class="scene-label"><strong id="sceneTitle">Astronauta educativo</strong><small id="sceneSubtitle">Arrastra para rotar · rueda o pellizca para acercar</small></div>
+        </div>
+
+        <div class="viewport" id="viewport">
+          <model-viewer id="modelViewer"
+            src="https://modelviewer.dev/shared-assets/models/Astronaut.glb"
+            alt="Modelo 3D interactivo para una actividad educativa"
+            camera-controls touch-action="pan-y" auto-rotate autoplay
+            shadow-intensity="1.35" shadow-softness=".8" exposure="1.05"
+            environment-image="neutral" interaction-prompt="auto"
+            ar ar-modes="webxr scene-viewer quick-look" ar-scale="auto"
+            ar-placement="floor" xr-environment>
+          </model-viewer>
+
+          <div class="loading-card" id="loadingCard">
+            <div class="loader-ring" aria-hidden="true"></div>
+            <strong id="loadingTitle">Preparando modelo 3D</strong>
+            <span id="loadingProgress">Cargando geometría y texturas…</span>
+          </div>
+
+          <div class="ar-prompt" id="arPrompt" hidden>
+            <div><strong>Coloca el modelo en el aula</strong><span id="arPromptText">Mueve el teléfono lentamente para detectar una superficie.</span></div>
+            <button class="primary-button orange" id="launchArButton" type="button">Activar cámara RA</button>
+          </div>
+
+          <div class="vr-stage" id="vrStage" hidden>
+            <a-scene id="vrScene" embedded renderer="colorManagement:true; physicallyCorrectLights:true; antialias:true" xr-mode-ui="enabled:false" webxr="referenceSpaceType:local-floor; optionalFeatures:local-floor,bounded-floor,hand-tracking" loading-screen="enabled:false">
+              <a-sky color="#020b15"></a-sky>
+              <a-plane position="0 0 -2" rotation="-90 0 0" width="18" height="18" material="color:#041b2e; metalness:.08; roughness:.82" shadow="receive:true"></a-plane>
+              <a-entity line="start:-8 .01 -2; end:8 .01 -2; color:#0b78a8; opacity:.5"></a-entity>
+              <a-entity line="start:0 .01 -10; end:0 .01 6; color:#0b78a8; opacity:.5"></a-entity>
+              <a-torus position="0 .025 -2.4" rotation="-90 0 0" radius="1.55" radius-tubular=".014" material="color:#00b7ff; emissive:#00b7ff; emissiveIntensity:.8; opacity:.72; transparent:true"></a-torus>
+              <a-torus position="0 .03 -2.4" rotation="-90 0 0" radius="1.9" radius-tubular=".009" material="color:#b6e800; emissive:#b6e800; emissiveIntensity:.65; opacity:.45; transparent:true"></a-torus>
+              <a-cylinder position="0 .2 -2.4" radius=".82" height=".4" material="color:#092d48; metalness:.6; roughness:.32" shadow="cast:true; receive:true"></a-cylinder>
+              <a-cylinder position="0 .43 -2.4" radius=".66" height=".08" material="color:#00b7ff; emissive:#006c9a; emissiveIntensity:.42; metalness:.7"></a-cylinder>
+              <a-entity id="vrModel" class="clickable" position="0 .48 -2.4" gltf-model="url(https://modelviewer.dev/shared-assets/models/Astronaut.glb)" fit-gltf="size:1.65" spin-model="active:true; speed:16" shadow="cast:true; receive:true"></a-entity>
+              <a-text id="vrTitle" value="ASTRONAUTA EDUCATIVO" position="0 2.75 -3.45" width="5" align="center" color="#ffffff"></a-text>
+              <a-text value="OBSERVA · INTERROGA · EXPLICA" position="0 2.42 -3.44" width="3.8" align="center" color="#b6e800"></a-text>
+              <a-plane position="-2.45 1.55 -3.2" width="1.55" height="1.05" material="color:#062039; opacity:.9; transparent:true" rotation="0 18 0"></a-plane>
+              <a-text value="MISION XR\n\nRodea el objeto.\nIdentifica 3 detalles.\nExplica una relacion." position="-2.43 1.78 -3.14" width="1.3" align="left" color="#dff5ff" rotation="0 18 0"></a-text>
+              <a-plane position="2.45 1.55 -3.2" width="1.55" height="1.05" material="color:#062039; opacity:.9; transparent:true" rotation="0 -18 0"></a-plane>
+              <a-text value="CONTROLES\n\nMirada o laser: elegir\nWASD: desplazarse\nGafas: entrar en RV" position="2.43 1.78 -3.14" width="1.3" align="left" color="#dff5ff" rotation="0 -18 0"></a-text>
+              <a-light type="ambient" color="#afcfe2" intensity=".7"></a-light>
+              <a-light type="directional" color="#ffffff" intensity="1.1" position="-3 5 4" shadow="cast:true"></a-light>
+              <a-light type="point" color="#00b7ff" intensity="1.3" distance="9" position="3 3 1"></a-light>
+              <a-light type="point" color="#b6e800" intensity=".65" distance="7" position="-3 2 0"></a-light>
+              <a-entity id="cameraRig" position="0 0 2.5">
+                <a-camera id="vrCamera" position="0 1.6 0" look-controls wasd-controls="acceleration:24">
+                  <a-cursor id="gazeCursor" visible="false" fuse="false" raycaster="objects:.clickable" material="color:#ff7a1a; shader:flat"></a-cursor>
+                </a-camera>
+                <a-entity laser-controls="hand:left" raycaster="objects:.clickable; far:20; lineColor:#00b7ff"></a-entity>
+                <a-entity laser-controls="hand:right" raycaster="objects:.clickable; far:20; lineColor:#b6e800"></a-entity>
+              </a-entity>
+            </a-scene>
+            <div class="vr-overlay">
+              <button class="primary-button" id="enterVrButton" type="button">Entrar con visor</button>
+              <button class="secondary-button" id="exitVrScreenButton" type="button">Volver a 3D</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls-strip">
+          <div class="control-group">
+            <button class="small-button active" id="autoRotateButton" type="button" aria-pressed="true">↻ Giro</button>
+            <button class="small-button" id="animationButton" type="button">▶ Animación</button>
+            <button class="small-button" id="resetCameraButton" type="button">⌂ Restablecer</button>
+            <button class="small-button" id="fullscreenButton" type="button">⛶ Pantalla</button>
+          </div>
+          <div class="range-control"><label for="scaleRange">Escala <span id="scaleValue">1,0×</span></label><input id="scaleRange" type="range" min="0.25" max="2.5" step="0.05" value="1"></div>
+          <div class="model-state" id="modelState">Modelo de demostración · CC BY</div>
+        </div>
+      </section>
+
+      <aside class="panel side-panel right-panel" aria-labelledby="designTitle">
+        <div class="panel-head"><div><p class="eyebrow">02 · Diseñar</p><h2 id="designTitle">Mediación didáctica</h2></div><button class="icon-button" id="narrateButton" type="button" title="Narrar misión" aria-label="Narrar misión">♪</button></div>
+        <div class="tabs" role="tablist" aria-label="Panel de diseño">
+          <button class="tab-button active" type="button" role="tab" aria-selected="true" data-tab="activity">Actividad</button>
+          <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="points">Puntos</button>
+          <button class="tab-button" type="button" role="tab" aria-selected="false" data-tab="ai">IA</button>
+        </div>
+
+        <div class="tab-panel" id="tab-activity" role="tabpanel">
+          <div class="info-banner"><strong>Del objeto al aprendizaje</strong><p>Define propósito, interacción y evidencia. La inmersión sin una pregunta solo produce asombro momentáneo.</p></div>
+          <div class="field"><label for="activityTitle">Título de la experiencia</label><input id="activityTitle" value="Detectives del objeto 3D"></div>
+          <div class="field"><label for="knowledgeArea">Área de conocimiento</label><select id="knowledgeArea"><option>Informática y tecnología</option><option>Ciencias naturales</option><option>Matemáticas y física</option><option>Salud y anatomía</option><option>Historia y patrimonio</option><option>Arte y diseño</option><option>Ingeniería y arquitectura</option><option>Formación docente</option></select></div>
+          <div class="field"><label for="educationLevel">Nivel educativo</label><select id="educationLevel"><option>Educación superior</option><option>Educación media</option><option>Educación básica</option><option>Educación inicial</option><option>Formación técnica y profesional</option></select></div>
+          <div class="field"><label for="learningGoal">Objetivo de aprendizaje</label><textarea id="learningGoal">Analizar la estructura del objeto, identificar relaciones entre sus partes y explicar una aplicación en contexto.</textarea></div>
+          <div class="mission-card">
+            <h3 id="missionTitle">Misión XR: mirar como investigador</h3>
+            <p id="missionText">Observa desde tres ángulos, fija dos puntos de interés, formula una explicación y transfiere la idea a un caso nuevo.</p>
+            <div class="progress-track" aria-label="Progreso de la misión"><div class="progress-bar" id="missionProgress"></div></div>
+            <div class="mission-steps" id="missionSteps">
+              <button class="mission-step" type="button" data-step="observe">1 · Observar</button>
+              <button class="mission-step" type="button" data-step="annotate">2 · Señalar</button>
+              <button class="mission-step" type="button" data-step="explain">3 · Explicar</button>
+              <button class="mission-step" type="button" data-step="transfer">4 · Transferir</button>
+            </div>
+          </div>
+          <div class="button-row" style="margin-top:10px"><button class="secondary-button" id="newMissionButton" type="button">Generar reto</button><button class="secondary-button" id="exportButton" type="button">Descargar ficha</button></div>
+        </div>
+
+        <div class="tab-panel" id="tab-points" role="tabpanel" hidden>
+          <div class="info-banner"><strong>Hotspots sobre el modelo</strong><p>Escribe una pista, pulsa “Fijar punto” y luego toca la superficie 3D. En RA web, las anotaciones pueden acompañar al objeto.</p></div>
+          <div class="field"><label for="hotspotLabel">Texto del punto didáctico</label><input id="hotspotLabel" value="Punto clave: ¿qué función cumple?"></div>
+          <div class="button-row"><button class="primary-button orange" id="armHotspotButton" type="button">＋ Fijar punto</button><button class="secondary-button" id="clearHotspotsButton" type="button">Limpiar</button></div>
+          <div class="annotation-list" id="annotationList"></div>
+          <div class="section-block">
+            <div class="section-top"><h3 class="section-title">Atribución del modelo</h3><small>Editable</small></div>
+            <div class="field"><label for="modelTitleInput">Nombre</label><input id="modelTitleInput" value="Astronauta educativo"></div>
+            <div class="field"><label for="modelAuthor">Autor / creador</label><input id="modelAuthor" value="Poly / modelo de demostración"></div>
+            <div class="field"><label for="modelLicense">Licencia</label><select id="modelLicense"><option>CC BY 4.0</option><option>CC0 / Dominio público</option><option>CC BY-SA</option><option>CC BY-NC</option><option>Licencia estándar de Sketchfab</option><option>Licencia institucional / propia</option><option>Por verificar</option></select></div>
+            <div class="field"><label for="modelSource">Enlace de origen</label><input id="modelSource" type="url" value="https://modelviewer.dev/" placeholder="https://sketchfab.com/3d-models/..."></div>
+            <button class="secondary-button" id="saveMetadataButton" type="button">Guardar atribución</button>
+            <div class="license-note"><span>⚑</span><span>Los modelos Creative Commons descargados de Sketchfab deben conservar crédito al autor, fuente y licencia.</span></div>
+          </div>
+        </div>
+
+        <div class="tab-panel" id="tab-ai" role="tabpanel" hidden>
+          <div class="info-banner"><strong>Copiloto pedagógico sin API</strong><p>La aplicación construye una instrucción lista para pegar en una IA. No envía el modelo ni datos del estudiante.</p></div>
+          <div class="field"><label for="aiFocus">Tipo de apoyo</label><select id="aiFocus"><option>Secuencia antes-durante-después</option><option>Preguntas socráticas</option><option>Rúbrica de desempeño</option><option>Adaptaciones DUA</option><option>Caso o simulación profesional</option></select></div>
+          <div class="field"><label for="aiDuration">Duración disponible</label><select id="aiDuration"><option>20 minutos</option><option>35 minutos</option><option>50 minutos</option><option>90 minutos</option></select></div>
+          <button class="primary-button" id="generatePromptButton" type="button">✦ Crear prompt didáctico</button>
+          <div class="prompt-box" id="aiPrompt" tabindex="0">Completa el objetivo y pulsa “Crear prompt didáctico”.</div>
+          <div class="button-row"><button class="secondary-button" id="copyPromptButton" type="button">Copiar prompt</button><button class="secondary-button" id="speakPromptButton" type="button">Escuchar</button></div>
+          <p class="hint">Verifica cualquier respuesta de IA, evita datos personales y conserva siempre una alternativa no inmersiva.</p>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="modal-backdrop" id="introModal" role="dialog" aria-modal="true" aria-labelledby="introTitle">
+    <div class="modal">
+      <p class="eyebrow">Dinámica de apertura · 12 minutos</p>
+      <h2 id="introTitle">El objeto que cambia de realidad</h2>
+      <p class="lead">Un mismo modelo puede ser observado en una pantalla, situado sobre una mesa o recorrido desde dentro. El reto no es identificar cuál tecnología impresiona más, sino cuál ayuda mejor a aprender.</p>
+      <div class="modal-grid">
+        <div class="modal-card"><b>1 · OBSERVADOR</b><span>Encuentra tres detalles que una imagen plana no revela.</span></div>
+        <div class="modal-card"><b>2 · CONECTOR</b><span>Relaciona esos detalles con un concepto de la asignatura.</span></div>
+        <div class="modal-card"><b>3 · CRÍTICO</b><span>Decide: ¿3D, RA, RV o alternativa accesible? Justifica.</span></div>
+      </div>
+      <div class="class-route"><strong>Pregunta detonadora</strong><p>“Si la tecnología desapareciera, ¿qué aprendizaje debería permanecer?” Cierre: cada equipo propone una evidencia observable de aprendizaje y una adaptación para diversidad funcional, sensorial o tecnológica.</p></div>
+      <div class="modal-actions"><button class="secondary-button" id="skipIntroButton" type="button">Explorar primero</button><button class="primary-button" id="startIntroButton" type="button">Iniciar con el modelo</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="compatModal" role="dialog" aria-modal="true" aria-labelledby="compatTitle" hidden>
+    <div class="modal">
+      <p class="eyebrow">Diagnóstico de acceso</p>
+      <h2 id="compatTitle">¿Qué experiencia puede usar este equipo?</h2>
+      <p class="lead">El modo 3D funciona como alternativa universal. RA y RV dependen del navegador, del dispositivo, de HTTPS y de abrir la página fuera de vistas incrustadas.</p>
+      <div class="compat-grid">
+        <div class="compat-row"><b>Conexión segura</b><span id="secureResult">Comprobando…</span></div>
+        <div class="compat-row"><b>Vista de la aplicación</b><span id="frameResult">Comprobando…</span></div>
+        <div class="compat-row"><b>Realidad aumentada</b><span id="arResult">Comprobando…</span></div>
+        <div class="compat-row"><b>Realidad virtual</b><span id="vrResult">Comprobando…</span></div>
+        <div class="compat-row"><b>Modelo actual</b><span id="modelResult">Listo para comprobar</span></div>
+      </div>
+      <div class="class-route"><strong>Si la cámara no se activa</strong><p>Abra la aplicación en una pestaña completa, use HTTPS, pulse el botón RA desde una acción directa y revise permisos del navegador. En iPhone/iPad se usa Quick Look; en Android compatible se prioriza WebXR.</p></div>
+      <div class="modal-actions"><button class="secondary-button" id="openExternalButton" type="button">Abrir en otra pestaña</button><button class="primary-button" id="closeCompatButton" type="button">Continuar en 3D</button></div>
+    </div>
+  </div>
+
+  <script>
+  (() => {
+    'use strict';
+    const $ = id => document.getElementById(id);
+    const viewer = $('modelViewer');
+    const vrScene = $('vrScene');
+    const vrModel = $('vrModel');
+    const demoUrl = 'https://modelviewer.dev/shared-assets/models/Astronaut.glb';
+    const state = {
+      mode: '3d',
+      currentId: 'demo',
+      pinArmed: false,
+      animationPlaying: true,
+      mission: { observe: false, annotate: false, explain: false, transfer: false },
+      xr: { ar: false, vr: false },
+      models: [{
+        id: 'demo', name: 'Astronauta educativo', fileName: 'Astronaut.glb', url: demoUrl,
+        size: 0, local: false, author: 'Poly / modelo de demostración', license: 'CC BY 4.0',
+        source: 'https://modelviewer.dev/', annotations: []
+      }]
+    };
+    let toastTimer = null;
+    let hotspotSequence = 0;
+
+    function escapeAttribute(value) {
+      return String(value).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    }
+    function formatBytes(bytes) {
+      if (!bytes) return 'Demo web';
+      if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+      return `${(bytes / 1024 / 1024).toFixed(1).replace('.', ',')} MB`;
+    }
+    function slugify(value) {
+      return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'actividad-xr';
+    }
+    function notify(message, type = '') {
+      const toast = $('toast');
+      toast.textContent = message;
+      toast.className = `toast show ${type}`;
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => { toast.className = 'toast'; }, 3600);
+    }
+    function currentModel() { return state.models.find(model => model.id === state.currentId); }
+    function setStatus(element, label, kind = '') {
+      element.className = `status-pill ${kind}`;
+      element.innerHTML = `<i></i>${escapeAttribute(label)}`;
+    }
+    function switchTab(name) {
+      document.querySelectorAll('.tab-button').forEach(button => {
+        const active = button.dataset.tab === name;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      document.querySelectorAll('.tab-panel').forEach(panel => { panel.hidden = panel.id !== `tab-${name}`; });
+    }
+    function setMode(mode) {
+      state.mode = mode;
+      document.querySelectorAll('.mode-button').forEach(button => {
+        const active = button.dataset.mode === mode;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+      $('vrStage').hidden = mode !== 'vr';
+      viewer.hidden = mode === 'vr';
+      $('arPrompt').hidden = mode !== 'ar';
+      $('sceneSubtitle').textContent = mode === 'vr' ? 'WASD y ratón · compatible con visores WebXR' : mode === 'ar' ? 'Abre en el celular y coloca el objeto en una superficie' : 'Arrastra para rotar · rueda o pellizca para acercar';
+      if (mode === 'ar') {
+        $('arPromptText').textContent = window.self !== window.top ? 'La vista está incrustada: abre una pestaña completa antes de activar RA.' : 'Mueve el teléfono lentamente para detectar una superficie.';
+      }
+      if (mode === 'vr') setTimeout(() => { if (vrScene && vrScene.resize) vrScene.resize(); }, 80);
+      if (mode === '3d') state.mission.observe = true;
+      updateMission();
+    }
+    function renderCatalog() {
+      const list = $('modelList');
+      list.textContent = '';
+      state.models.forEach((model, index) => {
+        const card = document.createElement('div');
+        card.setAttribute('role', 'button');
+        card.tabIndex = 0;
+        card.className = `model-card${model.id === state.currentId ? ' active' : ''}`;
+        card.setAttribute('aria-label', `Cargar ${model.name}`);
+        const thumb = document.createElement('span');
+        thumb.className = 'model-thumb';
+        thumb.textContent = String(index + 1).padStart(2, '0');
+        const meta = document.createElement('span');
+        meta.className = 'model-meta';
+        const title = document.createElement('strong');
+        title.textContent = model.name;
+        const detail = document.createElement('small');
+        detail.textContent = model.local ? `${formatBytes(model.size)} · local` : 'Modelo de demostración';
+        meta.append(title, detail);
+        card.append(thumb, meta);
+        if (model.id !== 'demo') {
+          const remove = document.createElement('button');
+          remove.type = 'button';
+          remove.className = 'remove-model';
+          remove.textContent = '×';
+          remove.title = 'Quitar modelo';
+          remove.addEventListener('click', event => { event.stopPropagation(); removeModel(model.id); });
+          card.append(remove);
+        } else {
+          const badge = document.createElement('span');
+          badge.className = 'status-pill good';
+          badge.innerHTML = '<i></i>demo';
+          card.append(badge);
+        }
+        card.addEventListener('click', () => selectModel(model.id));
+        card.addEventListener('keydown', event => {
+          if (event.target === card && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            selectModel(model.id);
+          }
+        });
+        list.append(card);
+      });
+      $('modelCount').textContent = `${state.models.length} ${state.models.length === 1 ? 'modelo' : 'modelos'}`;
+      const localBytes = state.models.reduce((sum, model) => sum + (model.local ? model.size : 0), 0);
+      $('totalSize').textContent = localBytes ? `${formatBytes(localBytes)} locales` : 'Demo web';
+    }
+    function removeModel(id) {
+      const model = state.models.find(item => item.id === id);
+      if (!model) return;
+      if (model.local && model.url.startsWith('blob:')) URL.revokeObjectURL(model.url);
+      state.models = state.models.filter(item => item.id !== id);
+      if (state.currentId === id) selectModel('demo'); else renderCatalog();
+      notify('Modelo retirado de esta sesión. El archivo original no se modificó.');
+    }
+    function loadFiles(files) {
+      const valid = [...files].filter(file => file.name.toLowerCase().endsWith('.glb'));
+      if (!valid.length) { notify('Selecciona al menos un archivo con extensión .glb.', 'error'); return; }
+      valid.forEach(file => {
+        const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        state.models.push({
+          id, name: file.name.replace(/\.glb$/i, ''), fileName: file.name, url: URL.createObjectURL(file),
+          size: file.size, local: true, author: 'Por completar', license: 'Por verificar', source: '', annotations: []
+        });
+      });
+      renderCatalog();
+      selectModel(state.models[state.models.length - valid.length].id);
+      notify(`${valid.length} modelo${valid.length > 1 ? 's' : ''} GLB cargado${valid.length > 1 ? 's' : ''}.`, 'success');
+      if (valid.some(file => file.size > 45 * 1024 * 1024)) notify('Algún archivo supera 45 MB; en celulares puede tardar o consumir mucha memoria.', 'error');
+    }
+    function loadRemoteUrl() {
+      const raw = $('modelUrl').value.trim();
+      let url;
+      try { url = new URL(raw); } catch (_) { notify('Escribe una URL completa y válida.', 'error'); return; }
+      if (url.protocol !== 'https:') { notify('La URL debe usar HTTPS para trabajar con funciones XR.', 'error'); return; }
+      if (!/\.glb(?:$|[?#])/i.test(url.href)) { notify('La dirección debe apuntar a un archivo .glb.', 'error'); return; }
+      const name = decodeURIComponent(url.pathname.split('/').pop() || 'Modelo remoto').replace(/\.glb$/i, '');
+      const id = `remote-${Date.now()}`;
+      state.models.push({ id, name, fileName: `${name}.glb`, url: url.href, size: 0, local: false, author: 'Por completar', license: 'Por verificar', source: url.href, annotations: [] });
+      renderCatalog();
+      selectModel(id);
+      notify('URL añadida. Si no carga, el servidor probablemente bloquea CORS.', 'success');
+    }
+    function selectModel(id) {
+      const model = state.models.find(item => item.id === id);
+      if (!model) return;
+      state.currentId = id;
+      state.pinArmed = false;
+      $('armHotspotButton').classList.remove('active');
+      $('loadingCard').hidden = false;
+      $('loadingTitle').textContent = `Cargando ${model.name}`;
+      $('loadingProgress').textContent = 'Leyendo geometría, materiales y texturas…';
+      viewer.src = model.url;
+      viewer.alt = `Modelo 3D interactivo: ${model.name}`;
+      vrModel.removeAttribute('gltf-model');
+      setTimeout(() => vrModel.setAttribute('gltf-model', `url(${model.url})`), 30);
+      $('vrTitle').setAttribute('value', model.name.toUpperCase().slice(0, 34));
+      $('sceneTitle').textContent = model.name;
+      $('modelTitleInput').value = model.name;
+      $('modelAuthor').value = model.author;
+      $('modelLicense').value = [...$('modelLicense').options].some(option => option.value === model.license) ? model.license : 'Por verificar';
+      $('modelSource').value = model.source;
+      $('modelState').textContent = `${model.local ? formatBytes(model.size) + ' · archivo local' : 'Modelo remoto'} · ${model.license}`;
+      state.mission = { observe: false, annotate: model.annotations.length > 0, explain: false, transfer: false };
+      renderCatalog();
+      renderHotspots();
+      updateMission();
+    }
+    function saveMetadata() {
+      const model = currentModel();
+      if (!model) return;
+      model.name = $('modelTitleInput').value.trim() || model.fileName.replace(/\.glb$/i, '');
+      model.author = $('modelAuthor').value.trim() || 'Autor no indicado';
+      model.license = $('modelLicense').value;
+      model.source = $('modelSource').value.trim();
+      $('sceneTitle').textContent = model.name;
+      $('vrTitle').setAttribute('value', model.name.toUpperCase().slice(0, 34));
+      $('modelState').textContent = `${model.local ? formatBytes(model.size) + ' · archivo local' : 'Modelo remoto'} · ${model.license}`;
+      renderCatalog();
+      notify('Atribución guardada en la ficha de la sesión.', 'success');
+    }
+    function armHotspot() {
+      state.pinArmed = !state.pinArmed;
+      $('armHotspotButton').classList.toggle('active', state.pinArmed);
+      $('armHotspotButton').textContent = state.pinArmed ? '◎ Toca el modelo' : '＋ Fijar punto';
+      if (state.pinArmed) { setMode('3d'); notify('Ahora toca una parte del modelo para fijar la anotación.'); }
+    }
+    function addHotspotFromPoint(event) {
+      if (!state.pinArmed || typeof viewer.positionAndNormalFromPoint !== 'function') return;
+      const hit = viewer.positionAndNormalFromPoint(event.clientX, event.clientY);
+      if (!hit) { notify('No se detectó superficie. Toca directamente sobre el objeto.', 'error'); return; }
+      const label = $('hotspotLabel').value.trim() || 'Punto de aprendizaje';
+      const model = currentModel();
+      model.annotations.push({
+        id: `point-${++hotspotSequence}`,
+        label,
+        position: `${hit.position.x}m ${hit.position.y}m ${hit.position.z}m`,
+        normal: `${hit.normal.x} ${hit.normal.y} ${hit.normal.z}`
+      });
+      state.pinArmed = false;
+      $('armHotspotButton').classList.remove('active');
+      $('armHotspotButton').textContent = '＋ Fijar punto';
+      state.mission.annotate = true;
+      renderHotspots();
+      updateMission();
+      notify('Punto didáctico anclado al modelo.', 'success');
+    }
+    function renderHotspots() {
+      viewer.querySelectorAll('.hotspot').forEach(node => node.remove());
+      const list = $('annotationList');
+      list.textContent = '';
+      const model = currentModel();
+      if (!model || !model.annotations.length) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-state';
+        empty.textContent = 'Aún no hay puntos. Añade una pregunta o pista sobre la superficie.';
+        list.append(empty);
+        return;
+      }
+      model.annotations.forEach((annotation, index) => {
+        const button = document.createElement('button');
+        button.className = 'hotspot';
+        button.slot = `hotspot-${annotation.id}`;
+        button.dataset.position = annotation.position;
+        button.dataset.normal = annotation.normal;
+        button.setAttribute('aria-label', annotation.label);
+        button.textContent = String(index + 1);
+        const text = document.createElement('span');
+        text.className = 'annotation';
+        text.textContent = annotation.label;
+        button.append(text);
+        viewer.append(button);
+        const row = document.createElement('div');
+        row.className = 'annotation-item';
+        const number = document.createElement('b'); number.textContent = String(index + 1);
+        const label = document.createElement('span'); label.textContent = annotation.label;
+        const remove = document.createElement('button'); remove.type = 'button'; remove.textContent = '×'; remove.title = 'Eliminar punto';
+        remove.addEventListener('click', () => {
+          model.annotations = model.annotations.filter(item => item.id !== annotation.id);
+          state.mission.annotate = model.annotations.length > 0;
+          renderHotspots(); updateMission();
+        });
+        row.append(number, label, remove);
+        list.append(row);
+      });
+    }
+    function clearHotspots() {
+      const model = currentModel();
+      if (!model) return;
+      model.annotations = [];
+      state.mission.annotate = false;
+      renderHotspots(); updateMission();
+      notify('Se retiraron los puntos del modelo.');
+    }
+    function updateMission() {
+      document.querySelectorAll('.mission-step').forEach(button => button.classList.toggle('done', Boolean(state.mission[button.dataset.step])));
+      const complete = Object.values(state.mission).filter(Boolean).length;
+      $('missionProgress').style.width = `${complete * 25}%`;
+      if (complete === 4) {
+        $('missionTitle').textContent = 'Misión completada: del asombro a la evidencia';
+        $('missionText').textContent = 'Cierra comparando qué aportó el espacio XR y qué podría haberse aprendido sin él.';
+      } else {
+        $('missionTitle').textContent = 'Misión XR: mirar como investigador';
+        $('missionText').textContent = 'Observa desde tres ángulos, fija dos puntos de interés, formula una explicación y transfiere la idea a un caso nuevo.';
+      }
+    }
+    function toggleMissionStep(step) {
+      state.mission[step] = !state.mission[step];
+      updateMission();
+      if (Object.values(state.mission).every(Boolean)) notify('Misión completada. Solicita ahora una explicación con evidencia.', 'success');
+    }
+    function generateMission() {
+      const model = currentModel();
+      const level = $('educationLevel').value;
+      const area = $('knowledgeArea').value;
+      const variants = [
+        `Compara dos vistas de ${model.name}. Identifica una relación causa–efecto y represéntala con dos puntos anclados.`,
+        `Explica ${model.name} a una persona que no puede ver el modelo. ¿Qué descripción conservaría la idea esencial?`,
+        `Formula un error frecuente sobre ${model.name}, usa la exploración 3D para refutarlo y transfiere la conclusión a un caso real.`,
+        `Decide qué modo —3D, RA o RV— aporta mayor valor para estudiar ${model.name}. Defiende la decisión con una evidencia.`
+      ];
+      const choice = variants[Math.floor(Math.random() * variants.length)];
+      $('activityTitle').value = `Reto XR · ${model.name}`;
+      $('learningGoal').value = `${choice} Nivel: ${level}. Área: ${area}.`;
+      state.mission = { observe: false, annotate: false, explain: false, transfer: false };
+      updateMission();
+      notify('Nuevo reto generado. Ajústalo a tu resultado de aprendizaje.', 'success');
+    }
+    function buildAiPrompt() {
+      const model = currentModel();
+      const title = $('activityTitle').value.trim();
+      const goal = $('learningGoal').value.trim();
+      const area = $('knowledgeArea').value;
+      const level = $('educationLevel').value;
+      const focus = $('aiFocus').value;
+      const duration = $('aiDuration').value;
+      const prompt = `Actúa como diseñador instruccional experto en aprendizaje inmersivo y Diseño Universal para el Aprendizaje. Diseña una actividad de ${duration} para ${level}, área ${area}, titulada “${title}”. Se utilizará el modelo 3D “${model.name}” en un laboratorio web con exploración 3D, realidad aumentada y realidad virtual.\n\nObjetivo: ${goal}\nApoyo solicitado: ${focus}.\n\nEntrega: 1) activación de conocimientos previos; 2) instrucciones antes, durante y después de la inmersión; 3) cinco preguntas que exijan observar evidencia del modelo, no recordar datos; 4) una producción del estudiante; 5) criterios de una rúbrica breve; 6) adaptaciones DUA con alternativa sin visor, navegación por teclado, descripción verbal y trabajo cooperativo; 7) medidas de seguridad, privacidad y pausas; 8) una pregunta metacognitiva final. No inventes características del modelo que no puedan observarse. Distingue claramente cuándo conviene 3D, RA o RV. La IA apoya el diseño, pero el docente valida contenido, edad, sesgos y accesibilidad.`;
+      $('aiPrompt').textContent = prompt;
+      state.mission.explain = true;
+      updateMission();
+      notify('Prompt creado. Revísalo antes de usarlo con una IA.', 'success');
+    }
+    async function copyText(text) {
+      try { await navigator.clipboard.writeText(text); notify('Texto copiado.', 'success'); }
+      catch (_) {
+        const area = document.createElement('textarea'); area.value = text; document.body.append(area); area.select(); document.execCommand('copy'); area.remove(); notify('Texto copiado.', 'success');
+      }
+    }
+    function speak(text) {
+      if (!('speechSynthesis' in window)) { notify('La narración no está disponible en este navegador.', 'error'); return; }
+      speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'es-CO'; utterance.rate = .94;
+      speechSynthesis.speak(utterance);
+    }
+    function exportActivity() {
+      const model = currentModel();
+      const payload = {
+        titulo: $('activityTitle').value,
+        area: $('knowledgeArea').value,
+        nivel: $('educationLevel').value,
+        objetivo: $('learningGoal').value,
+        modelo: { nombre: model.name, archivo: model.fileName, autor: model.author, licencia: model.license, fuente: model.source },
+        puntos_didacticos: model.annotations.map(item => item.label),
+        ruta: ['Observar', 'Señalar', 'Explicar', 'Transferir'],
+        nota: 'El archivo GLB no se incluye. Adjuntarlo por separado y respetar su licencia.'
+      };
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const anchor = document.createElement('a');
+      anchor.href = URL.createObjectURL(blob);
+      anchor.download = `${slugify(payload.titulo)}.json`;
+      anchor.click();
+      setTimeout(() => URL.revokeObjectURL(anchor.href), 800);
+      state.mission.transfer = true; updateMission();
+      notify('Ficha didáctica descargada en formato JSON.', 'success');
+    }
+    function toggleAutoRotate() {
+      const active = !viewer.hasAttribute('auto-rotate');
+      if (active) viewer.setAttribute('auto-rotate', ''); else viewer.removeAttribute('auto-rotate');
+      $('autoRotateButton').classList.toggle('active', active);
+      $('autoRotateButton').setAttribute('aria-pressed', String(active));
+    }
+    function toggleAnimation() {
+      if (!viewer.availableAnimations || !viewer.availableAnimations.length) { notify('Este modelo no contiene animaciones.', 'error'); return; }
+      if (state.animationPlaying) { viewer.pause(); $('animationButton').textContent = '▶ Animación'; }
+      else { viewer.play(); $('animationButton').textContent = 'Ⅱ Pausar'; }
+      state.animationPlaying = !state.animationPlaying;
+    }
+    function resetCamera() {
+      viewer.cameraOrbit = '0deg 75deg 105%';
+      viewer.cameraTarget = 'auto auto auto';
+      viewer.fieldOfView = 'auto';
+      $('scaleRange').value = '1';
+      updateScale(1);
+      notify('Vista restablecida.');
+    }
+    function updateScale(value) {
+      const scale = Number(value);
+      viewer.scale = `${scale} ${scale} ${scale}`;
+      vrModel.setAttribute('scale', `${scale} ${scale} ${scale}`);
+      $('scaleValue').textContent = `${scale.toFixed(1).replace('.', ',')}×`;
+    }
+    async function launchAR() {
+      if (window.self !== window.top) {
+        $('compatModal').hidden = false;
+        notify('Para que la cámara funcione, abre la aplicación en una pestaña completa.', 'error');
+        return;
+      }
+      if (!window.isSecureContext) { $('compatModal').hidden = false; notify('RA requiere HTTPS o localhost.', 'error'); return; }
+      try {
+        if (typeof viewer.activateAR !== 'function') throw new Error('AR no disponible');
+        await viewer.activateAR();
+      } catch (_) {
+        $('compatModal').hidden = false;
+        notify('Este navegador no pudo iniciar RA. Puedes continuar en 3D o probar un móvil compatible.', 'error');
+      }
+    }
+    async function enterVR() {
+      if (window.self !== window.top) { $('compatModal').hidden = false; notify('Abre la aplicación en otra pestaña antes de entrar en RV.', 'error'); return; }
+      setMode('vr');
+      try { await vrScene.enterVR(); }
+      catch (_) { notify('No se encontró un visor WebXR. El laboratorio sigue disponible en pantalla.', 'error'); }
+    }
+    function openExternal() {
+      const opened = window.open(location.href, '_blank', 'noopener');
+      if (!opened) notify('El navegador bloqueó la pestaña. Usa el menú y elige “Abrir en nueva pestaña”.', 'error');
+      else notify('Pestaña abierta. Si cargaste un GLB local, selecciónalo nuevamente allí.');
+    }
+    async function detectXR() {
+      const secure = window.isSecureContext;
+      const framed = window.self !== window.top;
+      $('secureResult').textContent = secure ? '✓ HTTPS / contexto seguro' : '⚠ No seguro: RA y RV pueden bloquearse';
+      $('frameResult').textContent = framed ? '⚠ Vista incrustada: abrir en otra pestaña' : '✓ Pestaña completa y enfocada';
+      let ar = false, vr = false;
+      if (navigator.xr && secure && !framed) {
+        try { [ar, vr] = await Promise.all([navigator.xr.isSessionSupported('immersive-ar'), navigator.xr.isSessionSupported('immersive-vr')]); } catch (_) { }
+      }
+      state.xr = { ar, vr };
+      const modelViewerAr = Boolean(viewer.canActivateAR);
+      $('arResult').textContent = framed ? '⚠ Abra una pestaña completa para solicitar cámara' : ar ? '✓ WebXR inmersivo disponible' : modelViewerAr ? '✓ Hay una ruta RA del dispositivo' : 'Modo 3D disponible; RA no confirmada';
+      $('vrResult').textContent = framed ? '⚠ Abra una pestaña completa para solicitar inmersión' : vr ? '✓ Visor WebXR detectado' : 'Pantalla 3D disponible; visor no detectado';
+      $('modelResult').textContent = viewer.loaded ? '✓ Modelo cargado' : 'Cargando o esperando archivo';
+      setStatus($('statusAr'), framed ? 'RA: abrir fuera' : ar || modelViewerAr ? 'RA disponible' : 'RA por comprobar', !framed && (ar || modelViewerAr) ? 'good' : 'warn');
+      setStatus($('statusVr'), framed ? 'RV: abrir fuera' : vr ? 'RV disponible' : 'RV en pantalla', !framed && vr ? 'good' : 'warn');
+    }
+    function showCompatibility() { detectXR(); $('compatModal').hidden = false; }
+    function toggleFullscreen() {
+      if (!document.fullscreenElement) $('viewport').requestFullscreen?.(); else document.exitFullscreen?.();
+    }
+
+    $('chooseModelButton').addEventListener('click', () => $('modelFile').click());
+    $('modelFile').addEventListener('change', event => { loadFiles(event.target.files); event.target.value = ''; });
+    $('loadUrlButton').addEventListener('click', loadRemoteUrl);
+    ['dragenter', 'dragover'].forEach(type => $('dropZone').addEventListener(type, event => { event.preventDefault(); $('dropZone').classList.add('drag'); }));
+    ['dragleave', 'drop'].forEach(type => $('dropZone').addEventListener(type, event => { event.preventDefault(); $('dropZone').classList.remove('drag'); }));
+    $('dropZone').addEventListener('drop', event => loadFiles(event.dataTransfer.files));
+    document.querySelectorAll('.mode-button').forEach(button => button.addEventListener('click', () => setMode(button.dataset.mode)));
+    document.querySelectorAll('.tab-button').forEach(button => button.addEventListener('click', () => switchTab(button.dataset.tab)));
+    document.querySelectorAll('.mission-step').forEach(button => button.addEventListener('click', () => toggleMissionStep(button.dataset.step)));
+    $('armHotspotButton').addEventListener('click', armHotspot);
+    $('clearHotspotsButton').addEventListener('click', clearHotspots);
+    $('saveMetadataButton').addEventListener('click', saveMetadata);
+    $('newMissionButton').addEventListener('click', generateMission);
+    $('generatePromptButton').addEventListener('click', buildAiPrompt);
+    $('copyPromptButton').addEventListener('click', () => copyText($('aiPrompt').textContent));
+    $('speakPromptButton').addEventListener('click', () => speak($('aiPrompt').textContent));
+    $('narrateButton').addEventListener('click', () => speak(`${$('missionTitle').textContent}. ${$('missionText').textContent}. Objetivo: ${$('learningGoal').value}`));
+    $('exportButton').addEventListener('click', exportActivity);
+    $('autoRotateButton').addEventListener('click', toggleAutoRotate);
+    $('animationButton').addEventListener('click', toggleAnimation);
+    $('resetCameraButton').addEventListener('click', resetCamera);
+    $('fullscreenButton').addEventListener('click', toggleFullscreen);
+    $('scaleRange').addEventListener('input', event => updateScale(event.target.value));
+    $('launchArButton').addEventListener('click', launchAR);
+    $('enterVrButton').addEventListener('click', enterVR);
+    $('exitVrScreenButton').addEventListener('click', () => setMode('3d'));
+    $('compatButton').addEventListener('click', showCompatibility);
+    $('closeCompatButton').addEventListener('click', () => { $('compatModal').hidden = true; });
+    $('openExternalButton').addEventListener('click', openExternal);
+    $('helpButton').addEventListener('click', () => { $('introModal').hidden = false; });
+    $('skipIntroButton').addEventListener('click', () => { $('introModal').hidden = true; });
+    $('startIntroButton').addEventListener('click', () => { $('introModal').hidden = true; state.mission.observe = true; updateMission(); notify('Misión iniciada: rota el modelo y busca evidencia.', 'success'); });
+    viewer.addEventListener('click', addHotspotFromPoint);
+    viewer.addEventListener('progress', event => { const progress = Math.round((event.detail.totalProgress || 0) * 100); $('loadingProgress').textContent = `Cargando… ${progress}%`; });
+    viewer.addEventListener('load', () => {
+      $('loadingCard').hidden = true;
+      state.animationPlaying = Boolean(viewer.availableAnimations && viewer.availableAnimations.length);
+      $('animationButton').textContent = state.animationPlaying ? 'Ⅱ Pausar' : 'Sin animación';
+      $('animationButton').disabled = !state.animationPlaying;
+      $('modelResult').textContent = '✓ Modelo cargado y listo';
+      renderHotspots(); detectXR();
+    });
+    viewer.addEventListener('error', () => {
+      $('loadingCard').hidden = false;
+      $('loadingTitle').textContent = 'No se pudo cargar el modelo';
+      $('loadingProgress').textContent = 'Revisa que sea un GLB válido y, si usas URL, que permita CORS.';
+      $('modelResult').textContent = '⚠ Error al leer el modelo';
+      notify('No fue posible abrir el GLB. Prueba el archivo local o revisa su exportación.', 'error');
+    });
+    viewer.addEventListener('camera-change', () => { if (!state.mission.observe) { state.mission.observe = true; updateMission(); } });
+    viewer.addEventListener('ar-status', event => {
+      if (event.detail.status === 'session-started') notify('RA activa. Busca una superficie y toca para colocar el modelo.', 'success');
+      if (event.detail.status === 'failed') { $('compatModal').hidden = false; notify('La sesión RA no pudo iniciarse. Revisa compatibilidad y permisos.', 'error'); }
+    });
+    vrScene.addEventListener('enter-vr', () => { $('gazeCursor').setAttribute('visible', 'true'); state.mission.observe = true; updateMission(); notify('Inmersión RV activa. Usa mirada o controladores.', 'success'); });
+    vrScene.addEventListener('exit-vr', () => $('gazeCursor').setAttribute('visible', 'false'));
+    vrModel.addEventListener('click', () => {
+      const component = vrModel.getAttribute('spin-model');
+      vrModel.setAttribute('spin-model', `active:${!component.active}; speed:16`);
+      notify(component.active ? 'Modelo detenido para observación.' : 'Giro del modelo reanudado.');
+    });
+    window.addEventListener('keydown', event => {
+      if (event.target.matches('input, textarea, select')) return;
+      if (event.key === '1') setMode('3d');
+      if (event.key === '2') setMode('ar');
+      if (event.key === '3') setMode('vr');
+      if (event.key.toLowerCase() === 'r') resetCamera();
+      if (event.key.toLowerCase() === 'f') toggleFullscreen();
+      if (event.key === '+' || event.key === '=') { $('scaleRange').value = Math.min(2.5, Number($('scaleRange').value) + .1); updateScale($('scaleRange').value); }
+      if (event.key === '-') { $('scaleRange').value = Math.max(.25, Number($('scaleRange').value) - .1); updateScale($('scaleRange').value); }
+      if (event.key === 'Escape') { $('compatModal').hidden = true; }
+    });
+    window.addEventListener('beforeunload', () => state.models.forEach(model => { if (model.local && model.url.startsWith('blob:')) URL.revokeObjectURL(model.url); }));
+
+    renderCatalog();
+    renderHotspots();
+    updateMission();
+    detectXR();
+  })();
+  </script>
+</body>
+</html>
